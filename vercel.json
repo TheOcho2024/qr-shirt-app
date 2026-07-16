@@ -1,0 +1,8 @@
+{
+  "rewrites": [
+    { "source": "/s/:id", "destination": "/api/scan?id=:id" }
+  ],
+  "functions": {
+    "api/webhooks/order-created.js": { "maxDuration": 60 }
+  }
+}
