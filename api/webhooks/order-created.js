@@ -49,20 +49,21 @@ async function processOrder(order) {
       .from('shirts').select('id').eq('shopify_line_item_id', li.id).maybeSingle();
     if (existing) continue;
     const message = messageFromLineItem(li, propName) || 'SCAN ME';
+    const garment = garmentKey(li);
     const color = variantPart(li, 'color');
     const size = variantPart(li, 'size');
     const id = makeId();
     await supabase.from('shirts').insert({
       id, shopify_order_id: order.id, shopify_line_item_id: li.id,
-      message, product: li.title, color, size, status: 'pending',
+      message, product: li.title, garment, color, size, status: 'pending',
     });
     try {
       const scanUrl = process.env.PUBLIC_BASE_URL + '/s/' + id;
       const { publicUrl } = await buildPrintFile({ id, scanUrl });
       const { data: vmap } = await supabase
         .from('variant_map').select('printful_variant_id, placement')
-        .eq('color', color).eq('size', size).maybeSingle();
-      if (!vmap) throw new Error('No variant_map entry for ' + color + '/' + size);
+        .eq('product', garment).eq('color', color).eq('size', size).maybeSingle();
+      if (!vmap) throw new Error('No variant_map entry for ' + garment + ' ' + color + '/' + size);
       const { printfulOrderId } = await createPrintfulOrder({
         externalId: id, recipient,
         item: { printful_variant_id: vmap.printful_variant_id, placement: vmap.placement,
@@ -77,6 +78,15 @@ async function processOrder(order) {
       await supabase.from('shirts').update({ status: 'print_failed' }).eq('id', id);
     }
   }
+}
+
+// Which blank does this line item map to? Drives the variant_map lookup so a
+// hoodie in Black/L fulfills as a hoodie, not a tee.
+function garmentKey(li) {
+  const t = ((li.title || '') + ' ' + (li.variant_title || '')).toLowerCase();
+  if (t.includes('hoodie')) return 'hoodie';
+  if (t.includes('long sleeve') || t.includes('long-sleeve') || t.includes('longsleeve')) return 'longsleeve';
+  return 'tee';
 }
 
 function variantPart(li, which) {
